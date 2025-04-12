@@ -7,10 +7,9 @@ import traceback
 import mcp
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Dict, Set, Optional, List
+from typing import Dict
 
 from mcp import ClientSession, StdioServerParameters
-from mcp.shared.context import RequestContext
 from mcp.client.stdio import stdio_client
 from mcp.server.stdio import stdio_server
 from mcp.server import Server, NotificationOptions
@@ -29,7 +28,7 @@ class Subscription:
     url: AnyUrl
     last_content_hash: str
     last_check: datetime
-    check_interval: timedelta = timedelta(seconds=10)
+    check_interval: timedelta = timedelta(seconds=1)
 
 class SubscribeMCPProxy:
     def __init__(self, base_server_command: list[str]):
