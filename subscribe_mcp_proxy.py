@@ -10,9 +10,6 @@ from typing import Dict, Set, Optional, List
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.server.stdio import stdio_server
-from mcp.types import (
-    CallToolRequest, CallToolResult, Tool, Resource, Prompt,
-)
 from mcp.server import Server, NotificationOptions
 from mcp.server.models import InitializationOptions
 
