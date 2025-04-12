@@ -63,10 +63,19 @@ class SubscribeMCPProxy:
                 if server_capabilities.resources:
                     self.server.request_handlers[mcp.types.ReadResourceRequest] = self.handle_resource_get
                     self.server.request_handlers[mcp.types.ListResourcesRequest] = self.handle_list_resources
+                    if server_capabilities.resources.subscribe:
+                        self.server.request_handlers[mcp.types.SubscribeRequest] = self.handle_subscribe
+                        self.server.request_handlers[mcp.types.UnsubscribeRequest] = self.handle_unsubscribe
                 
                 if server_capabilities.prompts:
                     self.server.request_handlers[mcp.types.ListPromptsRequest] = self.handle_list_prompts
                     self.server.request_handlers[mcp.types.GetPromptRequest] = self.handle_get_prompt
+
+                # Add logging handler
+                self.server.request_handlers[mcp.types.SetLevelRequest] = self.handle_set_level
+
+                server = self.server
+
 
                 # Handle client connections through stdin/stdout
                 async with stdio_server() as (client_read, client_write):
@@ -156,6 +165,16 @@ class SubscribeMCPProxy:
                 messages=[]
             )
 
+    async def handle_subscribe(self, req: mcp.types.SubscribeRequest) -> mcp.types.EmptyResult:
+        """Forward subscription request to the base server."""
+        await self.base_client.subscribe_resource(req.params.uri)
+        return mcp.types.EmptyResult()
+
+    async def handle_unsubscribe(self, req: mcp.types.UnsubscribeRequest) -> mcp.types.EmptyResult:
+        """Forward unsubscribe request to the base server."""
+        await self.base_client.unsubscribe_resource(req.params.uri)
+        return mcp.types.EmptyResult()
+
     async def add_subscription(self, url: str, client_id: str):
         """Add a subscription for a client"""
         try:
@@ -185,6 +204,14 @@ class SubscribeMCPProxy:
         except Exception as e:
             logger.error(f"Error adding subscription: {e}")
             return False
+
+    async def handle_set_level(self, req: mcp.types.SetLevelRequest) -> mcp.types.EmptyResult:
+        """Forward logging level changes to the base server."""
+        # Forward the logging level to the base client
+        await self.base_client.set_level(req.params.level)
+        # Also set our own logging level
+        logging.getLogger().setLevel(req.params.level.upper())
+        return mcp.types.EmptyResult()
 
 
 async def main():
