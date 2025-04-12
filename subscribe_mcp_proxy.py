@@ -50,11 +50,11 @@ class SubscribeMCPProxy:
             env={"PYTHONUNBUFFERED": "1"}
         )
         
-        async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
+        async with stdio_client(server_params) as (base_read, base_write):
+            async with ClientSession(base_read, base_write) as session:
                 self.base_client = session
                 
-                # Initialize the connection
+                # Initialize the connection to base server
                 await session.initialize()
                 
                 try:
@@ -64,9 +64,7 @@ class SubscribeMCPProxy:
                     logger.error(f"Error listing tools: {e}")
                     raise
 
-                # Start the stdio server to handle client connections
-
-                # help! how do I add the handler?
+                # Set up request handlers for our server
                 self.server.request_handlers[mcp.types.CallToolRequest] = self.handle_tool_call
                 self.server.request_handlers[mcp.types.ReadResourceRequest] = self.handle_resource_get
                 self.server.request_handlers[mcp.types.ListToolsRequest] = self.handle_list_tools
@@ -74,11 +72,11 @@ class SubscribeMCPProxy:
                 self.server.request_handlers[mcp.types.ListPromptsRequest] = self.handle_list_prompts
                 self.server.request_handlers[mcp.types.GetPromptRequest] = self.handle_render_prompt
 
-
-                async with mcp.server.stdio.stdio_server() as (read_stream, write_stream):
+                # Handle client connections through stdin/stdout
+                async with stdio_server() as (client_read, client_write):
                     await self.server.run(
-                        read_stream,
-                        write_stream,
+                        client_read,
+                        client_write,
                         InitializationOptions(
                             server_name="subscribe-mcp-proxy",
                             server_version="0.1.0",

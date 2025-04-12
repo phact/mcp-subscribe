@@ -16,41 +16,34 @@ async def test_subscription():
         print(f"Received notification: {notification.type}")
         print(f"Changed resource:", notification.data)
     
-    async with stdio_client(server_params) as (read, write):
-        async with ClientSession(read, write) as session:
-            # Initialize the connection
-            await session.initialize()
-            
-            try:
+    try:
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                # Initialize the connection
+                await session.initialize()
+                
                 result = await session.list_tools()
                 print("Available tools:", [t.name for t in result.tools])
 
                 result = await session.call_tool(result.tools[0].name, {"url": "https://news.ycombinator.com"})
                 print("Result:", result)
-                exit(0)
-            except Exception as e:
-                print(f"Error listing tools: {e}")
-                traceback.print_exc()
-                exit(1)
 
-            # List available resources
-            #resources = await session.list_resources()
-            #print("Available resources:", [r.name for r in resources])
-            
-            #test_url = "https://news.ycombinator.com"
-            #await session.subscribe_resource(
-            #    "webpage",  # resource template name
-            #    {"url": test_url}  # parameters
-            #)
-            
-            #print(f"Subscribed to webpage resource with URL: {test_url}")
-            #print("Waiting for notifications. Press Ctrl+C to stop...")
-            
-            #try:
-            #    while True:
-            #        await asyncio.sleep(1)
-            #except KeyboardInterrupt:
-            #    print("\nStopping test client...")
+                # List available resources
+                #resources = await session.list_resources()
+                #print("Available resources:", [r.name for r in resources])
+
+                #test_url = "https://news.ycombinator.com"
+                #await session.subscribe_resource(
+                #    "webpage",  # resource template name
+                #    {"url": test_url}  # parameters
+                #)
+
+                #print(f"Subscribed to webpage resource with URL: {test_url}")
+                #print("Waiting for notifications. Press Ctrl+C to stop...")
+
+    except Exception as e:
+        print(f"Error: {e}")
+        traceback.print_exc()
 
 if __name__ == "__main__":
     asyncio.run(test_subscription())
