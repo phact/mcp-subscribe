@@ -54,23 +54,22 @@ class SubscribeMCPProxy:
             async with ClientSession(base_read, base_write) as session:
                 self.base_client = session
                 
-                # Initialize the connection to base server
-                await session.initialize()
+                # Initialize the connection to base server and store capabilities
+                init_result = await session.initialize()
+                server_capabilities = init_result.capabilities
                 
-                try:
-                    result = await session.list_tools()
-                    logger.info(f"Available tools: {[t.name for t in result.tools]}")
-                except Exception as e:
-                    logger.error(f"Error listing tools: {e}")
-                    raise
-
-                # Set up request handlers for our server
-                self.server.request_handlers[mcp.types.CallToolRequest] = self.handle_tool_call
-                self.server.request_handlers[mcp.types.ReadResourceRequest] = self.handle_resource_get
-                self.server.request_handlers[mcp.types.ListToolsRequest] = self.handle_list_tools
-                self.server.request_handlers[mcp.types.ListResourcesRequest] = self.handle_list_resources
-                self.server.request_handlers[mcp.types.ListPromptsRequest] = self.handle_list_prompts
-                self.server.request_handlers[mcp.types.GetPromptRequest] = self.handle_render_prompt
+                # Set up request handlers based on server capabilities
+                if server_capabilities.tools:
+                    self.server.request_handlers[mcp.types.CallToolRequest] = self.handle_tool_call
+                    self.server.request_handlers[mcp.types.ListToolsRequest] = self.handle_list_tools
+                
+                if server_capabilities.resources:
+                    self.server.request_handlers[mcp.types.ReadResourceRequest] = self.handle_resource_get
+                    self.server.request_handlers[mcp.types.ListResourcesRequest] = self.handle_list_resources
+                
+                if server_capabilities.prompts:
+                    self.server.request_handlers[mcp.types.ListPromptsRequest] = self.handle_list_prompts
+                    self.server.request_handlers[mcp.types.GetPromptRequest] = self.handle_get_prompt
 
                 # Handle client connections through stdin/stdout
                 async with stdio_server() as (client_read, client_write):
@@ -145,14 +144,20 @@ class SubscribeMCPProxy:
 
     async def handle_list_prompts(self, req: mcp.types.ListPromptsRequest) -> mcp.types.ListPromptsResult:
         """Forward prompt listing request to the base server."""
-        prompts = await self.base_client.list_prompts()
-        return mcp.types.ListPromptsResult(prompts=prompts)
+        result = await self.base_client.list_prompts()
+        return mcp.types.ListPromptsResult(prompts=result.prompts)
 
-    async def handle_render_prompt(self, req: mcp.types.GetPromptRequest) -> mcp.types.GetPromptResult:
-        """Forward prompt rendering request to the base server."""
-        # Assume that base_client.render_prompt returns a GetPromptResult object.
-        prompt_result = await self.base_client.render_prompt(req.params.name, req.params.arguments)
-        return prompt_result
+    async def handle_get_prompt(self, req: mcp.types.GetPromptRequest) -> mcp.types.GetPromptResult:
+        """Forward prompt request to the base server."""
+        try:
+            prompt_result = await self.base_client.get_prompt(req.params.name, req.params.arguments)
+            return prompt_result
+        except Exception as e:
+            logger.error(f"Error getting prompt: {e}")
+            return mcp.types.GetPromptResult(
+                description=f"Error getting prompt: {e}",
+                messages=[]
+            )
 
     async def add_subscription(self, url: str, client_id: str):
         """Add a subscription for a client"""
