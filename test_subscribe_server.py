@@ -1,7 +1,12 @@
 import asyncio
 import traceback
+from urllib.parse import parse_qs
+
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
+
+from util import call_tool_from_uri
+
 
 async def test_subscription():
     # Create server parameters for stdio connection
@@ -10,15 +15,18 @@ async def test_subscription():
         args=["subscribe_mcp_proxy.py"],  # Command line arguments
         env=None,  # Optional environment variables
     )
+
+    messages = []
     
     # Handler for notifications
-    async def handle_notification(notification: types.Notification):
-        print(f"Received notification: {notification.type}")
-        print(f"Changed resource:", notification.data)
-    
+    async def handle_notification(message):
+        messages.append(message)
+
+
+
     try:
         async with stdio_client(server_params) as (read, write):
-            async with ClientSession(read, write) as session:
+            async with ClientSession(read, write, message_handler=handle_notification) as session:
                 # Initialize the connection
                 init_result = await session.initialize()
                 capabilities = init_result.capabilities
@@ -45,18 +53,24 @@ async def test_subscription():
                     result = await session.get_prompt(result.prompts[0].name, {"url": "https://news.ycombinator.com"})
                     print("Prompt:", result)
 
-                #test_url = "https://news.ycombinator.com"
-                #await session.subscribe_resource(
-                #    "webpage",  # resource template name
-                #    {"url": test_url}  # parameters
-                #)
+                #result = await session.subscribe_resource("tool://fetch/?url=https://news.ycombinator.com")
+                result = await session.subscribe_resource("tool://fetch/?url=http://localhost:8000/test")
+                print("Subscribed to resource:", result)
 
-                #print(f"Subscribed to webpage resource with URL: {test_url}")
-                #print("Waiting for notifications. Press Ctrl+C to stop...")
+                while True:
+                    await asyncio.sleep(1)
+                    for message in messages:
+                        uri = message.root.params.uri
+                        result = await call_tool_from_uri(uri, session)
+                        print(result)
+                        messages.remove(message)
+
 
     except Exception as e:
         print(f"Error: {e}")
         traceback.print_exc()
+
+
 
 if __name__ == "__main__":
     asyncio.run(test_subscription())

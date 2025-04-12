@@ -1,5 +1,7 @@
 import asyncio
 import hashlib
+
+from pydantic.networks import AnyUrl
 import logging
 import traceback
 import mcp
@@ -8,10 +10,13 @@ from datetime import datetime, timedelta
 from typing import Dict, Set, Optional, List
 
 from mcp import ClientSession, StdioServerParameters
+from mcp.shared.context import RequestContext
 from mcp.client.stdio import stdio_client
 from mcp.server.stdio import stdio_server
 from mcp.server import Server, NotificationOptions
 from mcp.server.models import InitializationOptions
+
+from test_subscribe_server import call_tool_from_uri
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,21 +26,21 @@ logging.getLogger('mcp').setLevel(logging.DEBUG)
 
 @dataclass
 class Subscription:
-    url: str
-    client_id: str
+    url: AnyUrl
     last_content_hash: str
     last_check: datetime
-    check_interval: timedelta = timedelta(minutes=5)
+    check_interval: timedelta = timedelta(seconds=10)
 
 class SubscribeMCPProxy:
     def __init__(self, base_server_command: list[str]):
         print("Initializing proxy")
         self.server = Server("Subscribe MCP Proxy")
+        self.session = None
         self.base_client = None
         self.base_server_command = base_server_command
         
         # Track active subscriptions
-        self.subscriptions: Dict[str, Set[Subscription]] = {}
+        self.subscriptions: Dict[AnyUrl, Subscription] = {}
         
 
     async def start(self):
@@ -53,21 +58,21 @@ class SubscribeMCPProxy:
                 
                 # Initialize the connection to base server and store capabilities
                 init_result = await session.initialize()
-                server_capabilities = init_result.capabilities
+                self.server_capabilities = init_result.capabilities
                 
                 # Set up request handlers based on server capabilities
-                if server_capabilities.tools:
+                if self.server_capabilities.tools:
                     self.server.request_handlers[mcp.types.CallToolRequest] = self.handle_tool_call
                     self.server.request_handlers[mcp.types.ListToolsRequest] = self.handle_list_tools
                 
-                if server_capabilities.resources:
+                if self.server_capabilities.resources:
                     self.server.request_handlers[mcp.types.ReadResourceRequest] = self.handle_resource_get
                     self.server.request_handlers[mcp.types.ListResourcesRequest] = self.handle_list_resources
-                    if server_capabilities.resources.subscribe:
-                        self.server.request_handlers[mcp.types.SubscribeRequest] = self.handle_subscribe
-                        self.server.request_handlers[mcp.types.UnsubscribeRequest] = self.handle_unsubscribe
+
+                self.server.request_handlers[mcp.types.SubscribeRequest] = self.handle_subscribe
+                self.server.request_handlers[mcp.types.UnsubscribeRequest] = self.handle_unsubscribe
                 
-                if server_capabilities.prompts:
+                if self.server_capabilities.prompts:
                     self.server.request_handlers[mcp.types.ListPromptsRequest] = self.handle_list_prompts
                     self.server.request_handlers[mcp.types.GetPromptRequest] = self.handle_get_prompt
 
@@ -79,24 +84,44 @@ class SubscribeMCPProxy:
 
                 # Handle client connections through stdin/stdout
                 async with stdio_server() as (client_read, client_write):
-                    await self.server.run(
-                        client_read,
-                        client_write,
-                        InitializationOptions(
-                            server_name="subscribe-mcp-proxy",
-                            server_version="0.1.0",
-                            capabilities=self.server.get_capabilities(
-                                notification_options=NotificationOptions(),
-                                experimental_capabilities={}
+                    # Start background task for subscription checks
+                    check_task = asyncio.create_task(self.check_subscriptions())
+                    
+                    try:
+                        await self.server.run(
+                            client_read,
+                            client_write,
+                            InitializationOptions(
+                                server_name="subscribe-mcp-proxy",
+                                server_version="0.1.0",
+                                capabilities=self.server.get_capabilities(
+                                    notification_options=NotificationOptions(),
+                                    experimental_capabilities={}
+                                ),
                             ),
-                        ),
-                    )
-                async with stdio_server(self.server):
-                    # Keep running until interrupted
-                    while True:
-                        await asyncio.sleep(1)
+                        )
+                    finally:
+                        check_task.cancel()
+                        try:
+                            await check_task
+                        except asyncio.CancelledError:
+                            pass
 
-
+    async def check_subscriptions(self):
+        """Background task to check subscriptions"""
+        while True:
+            await asyncio.sleep(1)
+            for url, sub in self.subscriptions.items():
+                if sub.last_check + sub.check_interval < datetime.now():
+                    # Check for updates
+                    result =  await call_tool_from_uri(sub.url, self.base_client)
+                    new_hash = hashlib.md5(result.content[0].text.encode()).hexdigest()
+                    if new_hash != sub.last_content_hash:
+                        sub.last_content_hash = hashlib.md5(result.content[0].text.encode()).hexdigest()
+                        sub.last_check = datetime.now()
+                        self.server.list_resources()
+                        if self.session:
+                            await self.session.send_resource_updated(sub.url)
 
     async def handle_tool_call(self, req: mcp.types.CallToolRequest) -> mcp.types.CallToolResult:
         """Forward tool calls to the base server."""
@@ -167,39 +192,44 @@ class SubscribeMCPProxy:
 
     async def handle_subscribe(self, req: mcp.types.SubscribeRequest) -> mcp.types.EmptyResult:
         """Forward subscription request to the base server."""
-        await self.base_client.subscribe_resource(req.params.uri)
+        if self.session is None:
+            self.session = self.server.request_context.session
+
+        if resources := getattr(self.server_capabilities, 'resources', None):
+            if getattr(resources, 'subscribe', False):
+                await self.base_client.subscribe_resource(req.params.uri)
+
+        await self.add_subscription(req.params.uri)
         return mcp.types.EmptyResult()
 
     async def handle_unsubscribe(self, req: mcp.types.UnsubscribeRequest) -> mcp.types.EmptyResult:
         """Forward unsubscribe request to the base server."""
-        await self.base_client.unsubscribe_resource(req.params.uri)
+        if self.server_capabilities.resources.subscribe:
+            await self.base_client.unsubscribe_resource(req.params.uri)
+        del self.subscriptions[req.params.uri]
         return mcp.types.EmptyResult()
 
-    async def add_subscription(self, url: str, client_id: str):
+    async def add_subscription(self, url: AnyUrl):
         """Add a subscription for a client"""
         try:
             # Get initial content
-            result = await self.base_client.call_tool("fetch", {"url": url})
-            content = result.result
-            content_hash = hashlib.sha256(content.encode()).hexdigest()
-            
+            #result = await self.base_client.call_tool()
+            #content = result.result
+            #content_hash = hashlib.sha256(content.encode()).hexdigest()
+            result =  await call_tool_from_uri(url, self.base_client)
+            #TODO: do we need to support other content types / indices?
+            content_hash = hashlib.md5(result.content[0].text.encode()).hexdigest()
+
             # Create subscription
             sub = Subscription(
                 url=url,
-                client_id=client_id,
                 last_content_hash=content_hash,
                 last_check=datetime.now()
             )
             
             # Add to subscriptions
-            if url not in self.subscriptions:
-                self.subscriptions[url] = set()
-            
-            # Remove existing subscription if any
-            self.subscriptions[url] = {s for s in self.subscriptions[url] if s.client_id != client_id}
-            # Add new subscription
-            self.subscriptions[url].add(sub)
-            
+            self.subscriptions[url] = sub
+
             return True
         except Exception as e:
             logger.error(f"Error adding subscription: {e}")
