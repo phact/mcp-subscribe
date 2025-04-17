@@ -8,6 +8,7 @@ import mcp
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Dict
+import argparse
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -31,13 +32,18 @@ class Subscription:
     check_interval: timedelta = timedelta(seconds=1)
 
 class SubscribeMCPProxy:
-    def __init__(self, base_server_command: list[str]):
+    def __init__(self, base_server_command: list[str], poll_interval: float = 1.0):
+        """
+        :param base_server_command: list of command and args to launch the base MCP server
+        :param poll_interval: seconds to sleep between subscription check loops
+        """
         print("Initializing proxy")
         self.server = Server("Subscribe MCP Proxy")
         self.session = None
         self.base_client = None
         self.base_server_command = base_server_command
-        
+        # Loop delay for subscription polling
+        self.poll_interval = poll_interval
         # Track active subscriptions
         self.subscriptions: Dict[AnyUrl, Subscription] = {}
         
@@ -109,7 +115,8 @@ class SubscribeMCPProxy:
     async def check_subscriptions(self):
         """Background task to check subscriptions"""
         while True:
-            await asyncio.sleep(1)
+            # sleep for configured poll interval
+            await asyncio.sleep(self.poll_interval)
             for url, sub in self.subscriptions.items():
                 if sub.last_check + sub.check_interval < datetime.now():
                     # Check for updates
@@ -244,9 +251,26 @@ class SubscribeMCPProxy:
 
 
 async def main():
-    # Example usage
-    logging.info("Creating proxy")
-    proxy = SubscribeMCPProxy(["uvx", "mcp-server-fetch"])
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(description="Subscribe MCP Proxy")
+    parser.add_argument(
+        "--poll-interval", "-p",
+        type=float,
+        default=1.0,
+        help="Polling interval in seconds for subscription checks",
+    )
+    parser.add_argument(
+        "base_server_command",
+        nargs='+',
+        help="Base MCP server command and its arguments",
+    )
+    args = parser.parse_args()
+
+    base_cmd = args.base_server_command
+    poll_interval = args.poll_interval
+
+    logging.info(f"Creating proxy: base_server_command={base_cmd}, poll_interval={poll_interval}s")
+    proxy = SubscribeMCPProxy(base_cmd, poll_interval=poll_interval)
     logging.info("Proxy created")
     try:
         logging.info("Starting proxy")

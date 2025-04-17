@@ -2,6 +2,7 @@ import asyncio
 import traceback
 from urllib.parse import parse_qs
 
+import sys
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 
@@ -11,8 +12,8 @@ from util import call_tool_from_uri
 async def test_subscription():
     # Create server parameters for stdio connection
     server_params = StdioServerParameters(
-        command="python",  # Executable
-        args=["subscribe_mcp_proxy.py"],  # Command line arguments
+        command=sys.executable,  # Use same Python interpreter
+        args=["subscribe_mcp_proxy.py", "uvx", "mcp-server-fetch", "--poll-interval", "5"],  # Proxy plus base server cmd
         env=None,  # Optional environment variables
     )
 
