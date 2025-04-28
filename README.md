@@ -1,4 +1,7 @@
 # mcp-subscribe
+
+[video overview](https://youtu.be/5jq3h3m-4tA?si=uN0jd614YabLz2S2)
+
 This MCP server allows you to subscribe to changes in tools of another MCP server.
 
 To use it configure your client to use this mcp server with the base mcp server as an argument.
