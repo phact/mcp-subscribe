@@ -9,13 +9,10 @@ from mcp_subscribe.util import call_tool_from_uri
 
 
 async def test_subscription():
-    # Create server parameters for stdio connection
     server_params = StdioServerParameters(
-        #command=sys.executable,  # Use same Python interpreter
-        command="mcp_subscribe",  # Use same Python interpreter
-        #args=["mcp_subscribe", "uvx", "mcp-server-fetch", "--poll-interval", "5"],  # Proxy plus base server cmd
-        args=["uvx", "mcp-server-fetch", "--poll-interval", "5"],  # Proxy plus base server cmd
-        env=None,  # Optional environment variables
+        command="mcp_subscribe",
+        args=["uvx", "mcp-server-fetch", "--poll-interval", "5"],
+        env=None,
     )
 
     messages = []
