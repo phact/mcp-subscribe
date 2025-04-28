@@ -1,7 +1,6 @@
 import asyncio
 import traceback
 
-import sys
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
