@@ -5,14 +5,16 @@ import sys
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from util import call_tool_from_uri
+from mcp_subscribe.util import call_tool_from_uri
 
 
 async def test_subscription():
     # Create server parameters for stdio connection
     server_params = StdioServerParameters(
-        command=sys.executable,  # Use same Python interpreter
-        args=["subscribe_mcp_proxy.py", "uvx", "mcp-server-fetch", "--poll-interval", "5"],  # Proxy plus base server cmd
+        #command=sys.executable,  # Use same Python interpreter
+        command="mcp_subscribe",  # Use same Python interpreter
+        #args=["mcp_subscribe", "uvx", "mcp-server-fetch", "--poll-interval", "5"],  # Proxy plus base server cmd
+        args=["uvx", "mcp-server-fetch", "--poll-interval", "5"],  # Proxy plus base server cmd
         env=None,  # Optional environment variables
     )
 

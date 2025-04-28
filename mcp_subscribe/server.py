@@ -16,7 +16,7 @@ from mcp.server.stdio import stdio_server
 from mcp.server import Server, NotificationOptions
 from mcp.server.models import InitializationOptions
 
-from test_subscribe_server import call_tool_from_uri
+from mcp_subscribe.util import call_tool_from_uri
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -280,5 +280,9 @@ async def main():
         logging.error(f"Error starting proxy: {e}")
         traceback.print_exc()
 
-if __name__ == "__main__":
+
+def app():
     asyncio.run(main())
+
+if __name__ == "__main__":
+    app()
