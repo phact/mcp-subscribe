@@ -1,9 +1,8 @@
 import asyncio
 import traceback
-from urllib.parse import parse_qs
 
 import sys
-from mcp import ClientSession, StdioServerParameters, types
+from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
 from util import call_tool_from_uri
